@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+    <title>Stock Enquiry</title>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+
+       .container {
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            background-color: #007BFF;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        #result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1 class="text-2xl font-bold mb-4">Enquiry</h1>
+        <input type="text" id="stockCode" placeholder="stock code">
+        <button onclick="getStockInfo()">Search</button>
+        <div id="result"></div>
+    </div>
+
+    <script>
+        function getStockInfo() {
+            const stockCode = document.getElementById('stockCode').value;
+            if (!stockCode) {
+                alert('请输入有效的股票代码');
+                return;
+            }
+
+            const apiUrl = `/get_stock_info?code=${stockCode}`;
+            fetch(apiUrl)
+              .then(response => {
+                    return response.json();
+                })
+              .then(data => {
+                    const resultDiv = document.getElementById('result');
+                    resultDiv.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+                })
+              .catch(error => {
+                    const resultDiv = document.getElementById('result');
+                    resultDiv.innerHTML = `<p style="color: red;">获取股票信息时出错: ${error.message}</p>`;
+                });
+        }
+    </script>
+</body>
+
+</html>    

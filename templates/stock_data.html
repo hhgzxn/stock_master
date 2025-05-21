@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>达仁堂财务数据可视化</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios@1.4.0/dist/axios.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .chart-container {
+                @apply w-full md:w-4/5 mx-auto bg-white rounded-xl shadow-lg p-6 transition-all duration-300 hover:shadow-xl;
+            }
+            .card {
+                @apply bg-white rounded-lg shadow-md p-4 mb-6 transition-all duration-300 hover:shadow-lg;
+            }
+            .stat-card {
+                @apply bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg p-4 shadow-md transition-all duration-300 hover:shadow-lg hover:scale-[1.02];
+            }
+            .chart-wrapper {
+                @apply w-full aspect-[4/3] md:aspect-[16/9];
+            }
+            .loading-spinner {
+                @apply animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto my-8;
+            }
+            .growth-up {
+                @apply text-green-500 font-bold;
+            }
+            .growth-down {
+                @apply text-red-500 font-bold;
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans">
+    <div class="container mx-auto px-4 py-8">
+        <header class="mb-8 text-center">
+            <h1 class="text-[clamp(1.8rem,4vw,2.5rem)] font-bold text-gray-800 mb-2">达仁堂财务数据分析</h1>
+            <p class="text-gray-600 max-w-2xl mx-auto">基于后端API的财务数据可视化</p>
+        </header>
+
+        <div id="loadingContainer" class="text-center py-12">
+            <div class="loading-spinner"></div>
+            <p class="text-gray-600">正在从服务器获取数据...</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 hidden" id="statsContainer">
+            <div class="stat-card">
+                <h3 class="text-lg font-semibold text-gray-700 mb-2">总营业收入</h3>
+                <p class="text-2xl font-bold text-indigo-600" id="total-revenue">--</p>
+                <p class="text-sm text-gray-500 mt-1">
+                    <span id="revenue-growth" class="growth-indicator">--</span>
+                </p>
+            </div>
+            <div class="stat-card">
+                <h3 class="text-lg font-semibold text-gray-700 mb-2">净利润</h3>
+                <p class="text-2xl font-bold text-green-600" id="total-profit">--</p>
+                <p class="text-sm text-gray-500 mt-1">
+                    <span id="profit-growth" class="growth-indicator">--</span>
+                </p>
+            </div>
+            <div class="stat-card">
+                <h3 class="text-lg font-semibold text-gray-700 mb-2">毛利润</h3>
+                <p class="text-2xl font-bold text-orange-600" id="gross-profit">--</p>
+                <p class="text-sm text-gray-500 mt-1">
+                    <span id="gross-profit-growth" class="growth-indicator">--</span>
+                </p>
+            </div>
+        </div>
+
+        <div class="chart-container mb-8 hidden" id="chartContainer">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800">财务指标趋势</h2>
+                <div class="flex space-x-2">
+                    <button class="btn-filter bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-md transition-all" data-type="revenue-profit">收入与利润</button>
+                    <button class="btn-filter bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-md transition-all" data-type="gross-profit">毛利润</button>
+                    <button class="btn-filter bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-md transition-all" data-type="margin-roa">利润率与ROA</button>
+                    <button class="btn-filter bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-md transition-all" data-type="cash-flow">现金流</button>
+                </div>
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="financialChart"></canvas>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 hidden" id="detailsContainer">
+            <div class="card">
+                <h2 class="text-lg font-bold text-gray-800 mb-4">关键财务指标</h2>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">指标</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">最新值</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">环比变化</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200" id="financial-indicators">
+                            <!-- 数据将通过JavaScript动态填充 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2 class="text-lg font-bold text-gray-800 mb-4">季度对比分析</h2>
+                <div class="space-y-4">
+                    <div class="flex items-center justify-between">
+                        <span class="text-gray-700">营业收入环比增长</span>
+                        <span class="text-lg font-bold" id="revenue-growth-bar-text">--</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div id="revenue-growth-bar" class="bg-blue-600 h-2 rounded-full" style="width: 0%"></div>
+                    </div>
+
+                    <div class="flex items-center justify-between mt-4">
+                        <span class="text-gray-700">净利润环比增长</span>
+                        <span class="text-lg font-bold" id="profit-growth-bar-text">--</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div id="profit-growth-bar" class="bg-green-600 h-2 rounded-full" style="width: 0%"></div>
+                    </div>
+
+                    <div class="flex items-center justify-between mt-4">
+                        <span class="text-gray-700">毛利润环比增长</span>
+                        <span class="text-lg font-bold" id="gross-profit-growth-bar-text">--</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2">
+                        <div id="gross-profit-growth-bar" class="bg-orange-600 h-2 rounded-full" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="errorContainer" class="hidden bg-red-50 border border-red-200 rounded-lg p-6 mt-8">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <i class="fa fa-exclamation-triangle text-red-500 text-xl"></i>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-red-800">加载数据失败</h3>
+                    <div class="mt-2 text-sm text-red-700">
+                        <p id="errorMessage">无法连接到后端API。请确保服务器正在运行。</p>
+                    </div>
+                    <div class="mt-4">
+                        <button id="retryButton" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all">
+                            <i class="fa fa-refresh mr-2"></i>重试
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let chartData = null;
+        let financialChart = null;
+        let currentChartType = 'revenue-profit';
+        const API_URL = 'http://localhost:5000/api/financial-data'; // 后端API地址
+
+        function fetchFinancialData() {
+            document.getElementById('loadingContainer').classList.remove('hidden');
+            document.getElementById('statsContainer').classList.add('hidden');
+            document.getElementById('chartContainer').classList.add('hidden');
+            document.getElementById('detailsContainer').classList.add('hidden');
+            document.getElementById('errorContainer').classList.add('hidden');
+
+            axios.get(API_URL)
+                .then(response => {
+                    if (response.data.error) {
+                        throw new Error(response.data.error);
+                    }
+                    
+                    chartData = response.data;
+                    
+                    // 显示数据区域
+                    document.getElementById('loadingContainer').classList.add('hidden');
+                    document.getElementById('statsContainer').classList.remove('hidden');
+                    document.getElementById('chartContainer').classList.remove('hidden');
+                    document.getElementById('detailsContainer').classList.remove('hidden');
+                    
+                    // 创建图表并更新数据
+                    createChart(chartData);
+                    updateFinancialIndicators(chartData);
+                    updateSummaryStats(chartData);
+                })
+                .catch(error => {
+                    console.error('获取数据失败:', error);
+                    document.getElementById('loadingContainer').classList.add('hidden');
+                    document.getElementById('errorContainer').classList.remove('hidden');
+                    document.getElementById('errorMessage').textContent = 
+                        `获取数据失败: ${error.message || '无法连接到服务器'}`;
+                });
+        }
+
+        function createChart(data, chartType = 'revenue-profit') {
+            const ctx = document.getElementById('financialChart').getContext('2d');
+            
+            // 如果已有图表，销毁它
+            if (financialChart) {
+                financialChart.destroy();
+            }
+            
+            let datasets = [];
+            let chartTitle = '';
+            
+            if (chartType === 'revenue-profit') {
+                datasets = [
+                    {
+                        label: '营业总收入(亿元)',
+                        data: data.revenues,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: true
+                    },
+                    {
+                        label: '归属净利润(亿元)',
+                        data: data.profits,
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: true
+                    }
+                ];
+                chartTitle = '营业总收入与归属净利润趋势';
+            } else if (chartType === 'gross-profit') {
+                datasets = [
+                    {
+                        label: '营业总收入(亿元)',
+                        data: data.revenues,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: false
+                    },
+                    {
+                        label: '归属净利润(亿元)',
+                        data: data.profits,
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: false
+                    },
+                    {
+                        label: '毛利润(亿元)',
+                        data: data.grossProfits,
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.3,
+                        fill: true
+                    }
+                ];
+                chartTitle = '营业收入、净利润与毛利润趋势';
+            } else if (chartType === 'margin-roa') {
+                datasets = [
+                    {
+                        label: '毛利率(%)',
+                        data: data.margins,
+                        borderColor: '#f97316',
+                        backgroundColor: 'rgba(249, 115, 22, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        yAxisID: 'y'
+                    },
+                    {
+                        label: '总资产收益率(%)',
+                        data: data.roa,
+                        borderColor: '#8b5cf6',
+                        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        yAxisID: 'y1'
+                    }
+                ];
+                chartTitle = '毛利率与总资产收益率趋势';
+            } else if (chartType === 'cash-flow') {
+                datasets = [
+                    {
+                        label: '每股经营现金流(元)',
+                        data: data.cashFlows,
+                        borderColor: '#0ea5e9',
+                        backgroundColor: 'rgba(14, 165, 233, 0.1)',
+                        borderWidth: 2,
+                        tension: 0.3,
+                        fill: true
+                    }
+                ];
+                chartTitle = '每股经营现金流趋势';
+            }
+            
+            financialChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.dates,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        tooltip: {
+                            padding: 10,
+                            backgroundColor: 'rgba(255, 255, 255, 0.9)',
+                            titleColor: '#333',
+                            bodyColor: '#666',
+                            borderColor: '#ddd',
+                            borderWidth: 1,
+                            boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        if (label.includes('(亿元)')) {
+                                            label += context.parsed.y.toFixed(2) + ' 亿元';
+                                        } else if (label.includes('(%)')) {
+                                            label += context.parsed.y.toFixed(2) + '%';
+                                        } else {
+                                            label += context.parsed.y.toFixed(2);
+                                        }
+                                    }
+                                    return label;
+                                }
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: chartTitle,
+                            font: {
+                                size: 16
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        },
+                        y: {
+                            beginAtZero: chartType === 'revenue-profit' || chartType === 'cash-flow' || chartType === 'gross-profit',
+                            title: {
+                                display: true,
+                                text: chartType === 'margin-roa' ? '毛利率(%)' : 
+                                      chartType === 'cash-flow' ? '每股经营现金流(元)' : '金额(亿元)'
+                            }
+                        },
+                        y1: {
+                            beginAtZero: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: '总资产收益率(%)'
+                            },
+                            grid: {
+                                drawOnChartArea: false
+                            }
+                        }
+                    },
+                    animations: {
+                        tension: {
+                            duration: 1000,
+                            easing: 'linear'
+                        }
+                    }
+                }
+            });
+            
+            currentChartType = chartType;
+        }
+
+        function setupChartTypeButtons() {
+            const buttons = document.querySelectorAll('.btn-filter');
+            buttons.forEach(button => {
+                button.addEventListener('click', function() {
+                    const type = this.getAttribute('data-type');
+                    
+                    // 更新按钮样式
+                    buttons.forEach(btn => {
+                        btn.classList.remove('bg-blue-500', 'text-white');
+                        btn.classList.add('bg-gray-200', 'text-gray-700');
+                    });
+                    this.classList.remove('bg-gray-200', 'text-gray-700');
+                    this.classList.add('bg-blue-500', 'text-white');
+                    
+                    // 更新图表
+                    if (chartData) {
+                        createChart(chartData, type);
+                    }
+                });
+            });
+        }
+
+        function updateFinancialIndicators(data) {
+            const tableBody = document.getElementById('financial-indicators');
+            const indicators = [
+                { key: '基本每股收益', label: '基本每股收益', format: 'number' },
+                { key: '每股净资产', label: '每股净资产', format: 'number' },
+                { key: '毛利率', label: '毛利率', format: 'percentage' },
+                { key: '净利率', label: '净利率', format: 'percentage' },
+                { key: '总资产收益率', label: '总资产收益率', format: 'percentage' },
+                { key: '资产负债率', label: '资产负债率', format: 'percentage' },
+                { key: '毛利润', label: '毛利润', format: 'amount' },
+                { key: '营业收入环比增长', label: '营业收入环比增长', format: 'growth' },
+                { key: '净利润环比增长', label: '净利润环比增长', format: 'growth' },
+                { key: '毛利润环比增长', label: '毛利润环比增长', format: 'growth' },
+                { key: '扣非净利润', label: '扣非净利润', format: 'amount' }  // 添加扣非净利润字段    
+            ];
+
+            let html = '';
+            indicators.forEach(indicator => {
+                let value = data.recentData[indicator.key];
+                let formattedValue = value;
+                let growthHtml = '';
+                
+                if (value === undefined || value === null || value === 'N/A') {
+                    formattedValue = '—';
+                    growthHtml = '<span class="text-gray-500">—</span>';
+                } else {
+                    if (indicator.format === 'percentage') {
+                        formattedValue = parseFloat(value).toFixed(2) + '%';
+                    } else if (indicator.format === 'amount') {
+                        formattedValue = parseFloat(value).toFixed(2) + ' 亿元';
+                    } else if (indicator.format === 'growth') {
+                        const growthValue = parseFloat(value);
+                        const isPositive = growthValue >= 0;
+                        formattedValue = (isPositive ? '+' : '') + growthValue.toFixed(2) + '%';
+                        growthHtml = `
+                            <span class="${isPositive ? 'text-green-500' : 'text-red-500'} font-medium">
+                                ${isPositive ? '<i class="fa fa-arrow-up mr-1"></i>' : '<i class="fa fa-arrow-down mr-1"></i>'}${formattedValue}
+                            </span>
+                        `;
+                    } else {
+                        formattedValue = parseFloat(value).toFixed(2);
+                    }
+                    
+                    if (indicator.format !== 'growth') {
+                        growthHtml = '<span class="text-gray-500">—</span>';
+                    }
+                }
+                
+                html += `
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm font-medium text-gray-900">${indicator.label}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <div class="text-sm text-gray-900">${formattedValue}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            ${growthHtml}
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            tableBody.innerHTML = html;
+        }
+
+        function updateSummaryStats(data) {
+            // 获取最新财务数据（最后一个元素）
+            const totalRevenue = data.revenues[data.revenues.length - 1].toFixed(2);
+            const totalProfit = data.profits[data.profits.length - 1].toFixed(2);
+            const grossProfit = data.grossProfits[data.grossProfits.length - 1].toFixed(2);
+            const grossMargin = data.margins[data.margins.length - 1].toFixed(2);
+            
+            // 更新顶部统计卡片
+            document.getElementById('total-revenue').textContent = `${totalRevenue} 亿元`;
+            document.getElementById('total-profit').textContent = `${totalProfit} 亿元`;
+            document.getElementById('gross-profit').textContent = `${grossProfit} 亿元`;
+            
+            // 更新环比增长指标
+            const revenueGrowth = data.recentData['营业收入环比增长'];
+            const profitGrowth = data.recentData['净利润环比增长'];
+            const grossProfitGrowth = data.recentData['毛利润环比增长'];
+            
+            // 设置环比增长文本和样式
+            setGrowthIndicator('revenue-growth', revenueGrowth);
+            setGrowthIndicator('profit-growth', profitGrowth);
+            setGrowthIndicator('gross-profit-growth', grossProfitGrowth);
+            
+            // 设置进度条
+            setGrowthBar('revenue-growth-bar', 'revenue-growth-bar-text', revenueGrowth);
+            setGrowthBar('profit-growth-bar', 'profit-growth-bar-text', profitGrowth);
+            setGrowthBar('gross-profit-growth-bar', 'gross-profit-growth-bar-text', grossProfitGrowth);
+        }
+
+        function setGrowthIndicator(elementId, growthValue) {
+            const element = document.getElementById(elementId);
+            if (!growthValue || isNaN(parseFloat(growthValue))) {
+                element.innerHTML = '—';
+                return;
+            }
+            
+            const value = parseFloat(growthValue);
+            const isPositive = value >= 0;
+            const formattedValue = (isPositive ? '+' : '') + value.toFixed(2) + '%';
+            
+            element.className = isPositive ? 'growth-indicator growth-up' : 'growth-indicator growth-down';
+            element.innerHTML = `${isPositive ? '<i class="fa fa-arrow-up mr-1"></i>' : '<i class="fa fa-arrow-down mr-1"></i>'}${formattedValue}`;
+        }
+
+        function setGrowthBar(barId, textId, growthValue) {
+            const bar = document.getElementById(barId);
+            const text = document.getElementById(textId);
+            
+            if (!growthValue || isNaN(parseFloat(growthValue))) {
+                text.textContent = '—';
+                bar.style.width = '0%';
+                return;
+            }
+            
+            const value = parseFloat(growthValue);
+            const isPositive = value >= 0;
+            const formattedValue = (isPositive ? '+' : '') + value.toFixed(2) + '%';
+            
+            text.className = isPositive ? 'text-green-500 font-bold' : 'text-red-500 font-bold';
+            text.textContent = formattedValue;
+            bar.style.width = `${Math.abs(value)}%`;
+            bar.className = isPositive 
+                ? 'h-2 rounded-full bg-green-500 transition-all duration-1000' 
+                : 'h-2 rounded-full bg-red-500 transition-all duration-1000';
+        }
+
+        function init() {
+            setupChartTypeButtons();
+            
+            // 设置重试按钮
+            document.getElementById('retryButton').addEventListener('click', fetchFinancialData);
+            
+            // 监听窗口大小变化，调整图表
+            window.addEventListener('resize', function() {
+                if (financialChart) {
+                    financialChart.resize();
+                }
+            });
+            
+            // 初始加载数据
+            fetchFinancialData();
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
